@@ -24,47 +24,97 @@ FILL_INGRESO = PatternFill(fill_type="solid", fgColor="E8F5E9")
 CURRENCY_FORMAT = '"$"#,##0.00'
 
 
+def _fix_dashboard_formulas(wb) -> None:
+    """
+    Corrige las fórmulas del DASHBOARD para que solo sumen egresos (type=EGRESO).
+    Evita que ingresos se cuenten como gastos.
+    """
+    if "DASHBOARD" not in wb.sheetnames:
+        return
+    ws = wb["DASHBOARD"]
+    # Total gastos: solo EGRESO
+    ws["B3"].value = '=SUMIF(MOVIMIENTOS!E:E,"EGRESO",MOVIMIENTOS!G:G)'
+    # Total Cross: solo EGRESO
+    ws["B4"].value = '=SUMIFS(MOVIMIENTOS!G:G,MOVIMIENTOS!F:F,"Cross",MOVIMIENTOS!E:E,"EGRESO")'
+    # Total Pau: solo EGRESO
+    ws["B5"].value = '=SUMIFS(MOVIMIENTOS!G:G,MOVIMIENTOS!F:F,"Pau",MOVIMIENTOS!E:E,"EGRESO")'
+    # Categorías: solo EGRESO (referencia dinámica a la celda de categoría)
+    for row in range(9, 19):
+        cat_cell = f"A{row}"
+        ws.cell(row=row, column=2).value = (
+            f'=SUMIFS(MOVIMIENTOS!G:G,MOVIMIENTOS!C:C,{cat_cell},MOVIMIENTOS!E:E,"EGRESO")'
+        )
+
+
 def _current_month() -> str:
     return datetime.now().strftime("%Y-%m")
 
 
 def _get_excel_summary_data(month_prefix: str) -> dict:
     """
-    Datos para la hoja RESUMEN: mes, ingresos, gastos, balance,
-    top 5 categorías, presupuestos por usuario.
-    Reutiliza stats.compute_stats_all y repositories.
+    Datos para la hoja RESUMEN: mes, ingresos por usuario, gastos, balance,
+    top 5 categorías, presupuestos agregados (combinados de todos los usuarios).
+    Reutiliza stats.compute_stats_all, stats.compute_stats y repositories.
     """
     st = stats.compute_stats_all(month_prefix)
     start, end = stats.month_range(month_prefix)
 
     conn = get_conn()
-    budget_rows = []
+    income_by_user = []
+    try:
+        for user_id, user_name in get_all_users(conn):
+            st_user = stats.compute_stats(user_name, month_prefix)
+            income_by_user.append((user_name, st_user["income"]))
+    finally:
+        conn.close()
+
+    # Gastado por categoría: suma de EGRESO de TODOS los usuarios (mismas categorías que en MOVIMIENTOS)
+    all_expenses_by_cat: dict[str, float] = {}
+    conn = get_conn()
+    try:
+        for user_id, user_name in get_all_users(conn):
+            expenses = get_expense_by_category_for_month(conn, user_id, start, end)
+            for cat, amt in expenses.items():
+                all_expenses_by_cat[cat] = all_expenses_by_cat.get(cat, 0.0) + amt
+    finally:
+        conn.close()
+
+    # Presupuestos agregados por categoría (suma de todos los usuarios)
+    agg_budget: dict[str, dict] = {}
+    conn = get_conn()
     try:
         for user_id, user_name in get_all_users(conn):
             rows = get_budgets(conn, user_id)
-            expenses = get_expense_by_category_for_month(conn, user_id, start, end)
             for cat, budget_amt, curr in rows:
                 budget_amt = float(budget_amt)
                 if budget_amt <= 0:
                     continue
-                spent = expenses.get(cat, 0.0)
-                available = budget_amt - spent
-                pct = (spent / budget_amt * 100.0)
-                budget_rows.append({
-                    "user": user_name,
-                    "category": cat,
-                    "budget": budget_amt,
-                    "spent": spent,
-                    "available": available,
-                    "pct": round(pct, 1),
-                    "currency": curr or "CAD",
-                })
+                if cat not in agg_budget:
+                    agg_budget[cat] = {"budget": 0.0, "spent": 0.0, "currency": curr or "CAD"}
+                agg_budget[cat]["budget"] += budget_amt
+                agg_budget[cat]["spent"] = all_expenses_by_cat.get(cat, 0.0)
     finally:
         conn.close()
 
+    budget_rows = []
+    for cat, v in sorted(agg_budget.items()):
+        budget = v["budget"]
+        spent = v["spent"]
+        available = budget - spent
+        pct = (spent / budget * 100.0) if budget > 0 else 0.0
+        budget_rows.append({
+            "category": cat,
+            "budget": budget,
+            "spent": spent,
+            "available": available,
+            "pct": round(pct, 1),
+            "currency": v["currency"],
+        })
+
     return {
         "month": month_prefix,
-        "income": st["income"],
+        "income_by_user": income_by_user,
+        "income_total": st["income"],
         "expense": st["expense"],
         "balance": st["balance"],
         "top_categories": list(st["by_cat"].items())[:5],
@@ -92,8 +142,13 @@ def _build_resumen_sheet(wb, month_prefix: str) -> None:
     ws.cell(row=row, column=1).value = "Mes"
     ws.cell(row=row, column=2).value = data["month"]
     row += 1
-    ws.cell(row=row, column=1).value = "Ingresos"
-    ws.cell(row=row, column=2).value = data["income"]
+    for user_name, inc in data["income_by_user"]:
+        ws.cell(row=row, column=1).value = f"Ingresos {user_name}"
+        ws.cell(row=row, column=2).value = inc
+        ws.cell(row=row, column=2).number_format = CURRENCY_FORMAT
+        row += 1
+    ws.cell(row=row, column=1).value = "Ingresos Totales"
+    ws.cell(row=row, column=2).value = data["income_total"]
     ws.cell(row=row, column=2).number_format = CURRENCY_FORMAT
     row += 1
     ws.cell(row=row, column=1).value = "Gastos"
@@ -122,25 +177,23 @@ def _build_resumen_sheet(wb, month_prefix: str) -> None:
     row += 1
 
     if data["budget_rows"]:
-        ws.cell(row=row, column=1).value = "Presupuestos"
+        ws.cell(row=row, column=1).value = "Presupuestos (combinados)"
         row += 1
-        ws.cell(row=row, column=1).value = "Usuario"
-        ws.cell(row=row, column=2).value = "Categoría"
-        ws.cell(row=row, column=3).value = "Presupuesto"
-        ws.cell(row=row, column=4).value = "Gastado"
-        ws.cell(row=row, column=5).value = "Disponible"
-        ws.cell(row=row, column=6).value = "% usado"
+        ws.cell(row=row, column=1).value = "Categoría"
+        ws.cell(row=row, column=2).value = "Presupuesto"
+        ws.cell(row=row, column=3).value = "Gastado"
+        ws.cell(row=row, column=4).value = "Disponible"
+        ws.cell(row=row, column=5).value = "% usado"
         row += 1
         for r in data["budget_rows"]:
-            ws.cell(row=row, column=1).value = r["user"]
-            ws.cell(row=row, column=2).value = r["category"]
-            ws.cell(row=row, column=3).value = r["budget"]
+            ws.cell(row=row, column=1).value = r["category"]
+            ws.cell(row=row, column=2).value = r["budget"]
+            ws.cell(row=row, column=2).number_format = CURRENCY_FORMAT
+            ws.cell(row=row, column=3).value = r["spent"]
             ws.cell(row=row, column=3).number_format = CURRENCY_FORMAT
-            ws.cell(row=row, column=4).value = r["spent"]
+            ws.cell(row=row, column=4).value = r["available"]
             ws.cell(row=row, column=4).number_format = CURRENCY_FORMAT
-            ws.cell(row=row, column=5).value = r["available"]
-            ws.cell(row=row, column=5).number_format = CURRENCY_FORMAT
-            ws.cell(row=row, column=6).value = f"{r['pct']}%"
+            ws.cell(row=row, column=5).value = f"{r['pct']}%"
             row += 1
     else:
         ws.cell(row=row, column=1).value = "Sin presupuestos definidos"
@@ -256,6 +309,7 @@ def export_excel_template_copy(month_yyyy_mm: str | None = None) -> Path | None:
         r += 1
 
     _build_resumen_sheet(wb, month_prefix)
+    _fix_dashboard_formulas(wb)
 
     wb.save(out_path)
     print(f"✅ Excel generado (plantilla): {out_path}")
