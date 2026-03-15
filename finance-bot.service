@@ -1,0 +1,43 @@
+# finance-bot.service — systemd unit for the Finance Telegram Bot
+#
+# Install:
+#   sudo cp finance-bot.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now finance-bot
+#
+# Logs:
+#   journalctl -u finance-bot -f
+#
+# Adjust User, WorkingDirectory, and EnvironmentFile to match your setup.
+
+[Unit]
+Description=Finance Telegram Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=finance-bot
+Group=finance-bot
+WorkingDirectory=/opt/finance-bot-foxy
+EnvironmentFile=/opt/finance-bot-foxy/.env
+ExecStart=/opt/finance-bot-foxy/venv/bin/python telegram_bot.py
+
+Restart=on-failure
+RestartSec=5
+StartLimitBurst=5
+StartLimitIntervalSec=60
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=finance-bot
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/opt/finance-bot-foxy/storage /opt/finance-bot-foxy/reports
+
+[Install]
+WantedBy=multi-user.target
