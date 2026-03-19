@@ -167,9 +167,12 @@ def resumen_mes(user: str | None = None) -> None:
     print(stats.format_resumen(st))
 
 
-def export_excel_template() -> None:
-    """Genera Excel del mes actual usando plantilla (comando excel)."""
-    excel.export_excel_template_copy()
+def export_excel_template(month: str | None = None):
+    """
+    Genera Excel del mes actual usando plantilla (comando excel).
+    Devuelve Path del archivo generado o None si falla (ej. plantilla no existe).
+    """
+    return excel.export_excel_template_copy(month)
 
 
 def export_movimientos() -> None:

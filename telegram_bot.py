@@ -2,7 +2,6 @@ import re
 import sys
 import json
 import logging
-import subprocess
 from datetime import datetime, time as dtime
 from zoneinfo import ZoneInfo
 
@@ -10,16 +9,17 @@ from app.agents.admin.models import USERS, REPORTS_DIR as _REPORTS_DIR, STORAGE_
 from app.agents.admin.service import (
     add_transaction,
     check_budget_alert,
-    list_last_transactions,
-    reset_month_data,
-    get_summary,
-    get_weekly_report,
+    delete_budget_for_category,
     delete_last_transaction,
     edit_last_transaction_amount,
-    set_budget,
+    export_excel_template,
     get_budget_status,
+    get_summary,
+    get_weekly_report,
     list_budgets_status,
-    delete_budget_for_category,
+    list_last_transactions,
+    reset_month_data,
+    set_budget,
 )
 from app.agents.admin.stats import compute_stats, format_stats
 from telegram import Update
@@ -112,14 +112,6 @@ def resolve_user(update: Update) -> str:
     return DEFAULT_USER
 
 
-def run_cli(args: list[str]) -> tuple[int, str]:
-    """Run the admin CLI as a subprocess and return (exit_code, output)."""
-    cmd = [sys.executable, "-m", "app.agents.admin.main"] + args
-    p = subprocess.run(cmd, capture_output=True, text=True)
-    out = ((p.stdout or "") + "\n" + (p.stderr or "")).strip()
-    return p.returncode, out
-
-
 def current_month() -> str:
     return datetime.now(TZ).strftime("%Y-%m")
 
@@ -210,21 +202,20 @@ async def cmd_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     parts = (update.message.text or "").strip().split()
     m = normalize_month(parts[1]) if len(parts) >= 2 else current_month()
 
-    code, out = run_cli(["excel"])
-    if code != 0:
-        await update.message.reply_text(f"❌ No pude generar Excel:\n{out[:1500]}")
+    try:
+        path = export_excel_template(month=m)
+    except Exception as e:
+        log.exception("Excel generation failed: %s", e)
+        await update.message.reply_text(f"❌ No pude generar Excel:\n{e}")
         return
 
-    candidates = sorted(REPORTS_DIR.glob(f"*{m}*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if not candidates:
-        candidates = sorted(REPORTS_DIR.glob("*.xlsx"), key=lambda p: p.stat().st_mtime, reverse=True)
-
-    if not candidates:
-        await update.message.reply_text("❌ Generé Excel pero no encontré ningún .xlsx en reports/")
+    if path is None or not path.exists():
+        await update.message.reply_text("❌ No pude generar Excel. Verifica que la plantilla exista en app/templates/.")
         return
 
-    fp = candidates[0]
-    await update.message.reply_document(fp.open("rb"), filename=fp.name, caption=f"📎 Excel {m}")
+    await update.message.reply_document(
+        path.open("rb"), filename=path.name, caption=f"📎 Excel {m}"
+    )
 
 
 def has_amount(text: str) -> bool:
