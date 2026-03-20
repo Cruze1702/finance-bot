@@ -13,6 +13,7 @@ from app.agents.admin.parser import (
     extract_amount,
     is_ingreso,
     normalize_category,
+    resolve_income_category_for_input,
 )
 from app.agents.admin.repositories import (
     get_conn,
@@ -275,6 +276,13 @@ def set_budget(
     """
     if amount <= 0:
         return {"success": False, "message": "❌ El monto debe ser mayor a 0."}
+
+    income_cat = resolve_income_category_for_input(category_input)
+    if income_cat is not None:
+        return {
+            "success": False,
+            "message": "❌ No puedes definir presupuestos para categorías de ingreso. Los presupuestos solo aplican a gastos.",
+        }
 
     category = normalize_category(category_input)
     if category is None:

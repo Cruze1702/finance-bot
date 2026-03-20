@@ -8,6 +8,7 @@ from typing import Optional
 from app.agents.admin.models import (
     CATEGORIES,
     CATEGORY_ALIASES,
+    INCOME_CATEGORIES,
     INCOME_CATEGORY_ALIASES,
     INCOME_HINTS,
 )
@@ -84,3 +85,22 @@ def detect_income_category(text: str) -> str:
         if alias in t:
             return category
     return "OTROS INGRESOS"
+
+
+def resolve_income_category_for_input(input_text: str) -> Optional[str]:
+    """
+    Si el input es una categoría de ingreso (exacta o por alias), retorna esa categoría.
+    Si no, retorna None. Usado para validar presupuestos.
+    """
+    t = input_text.lower().strip()
+    if not t:
+        return None
+    if t == "ingresos":
+        return "INGRESOS"
+    for cat in INCOME_CATEGORIES:
+        if cat.lower() == t:
+            return cat
+    for alias, cat in INCOME_CATEGORY_ALIASES.items():
+        if alias in t or t in alias:
+            return cat
+    return None
