@@ -5,9 +5,10 @@ Orchestrates parser, repositories, stats, and excel.
 from datetime import datetime
 
 from app.agents.admin import excel
-from app.agents.admin.models import DEFAULT_CURRENCY, USERS
+from app.agents.admin.models import BUDGET_BLOCKED_CATEGORIES, DEFAULT_CURRENCY, USERS
 from app.agents.admin.parser import (
     detect_category,
+    detect_income_category,
     detect_payment,
     extract_amount,
     is_ingreso,
@@ -81,7 +82,7 @@ def add_transaction(user_display_name: str, text: str) -> dict:
             return result
 
         tx_type = "INGRESO" if is_ingreso(main_text) else "EGRESO"
-        category = "INGRESOS" if tx_type == "INGRESO" else detect_category(main_text)
+        category = detect_income_category(main_text) if tx_type == "INGRESO" else detect_category(main_text)
         payment = detect_payment(main_text)
         now = datetime.now()
         ts = now.strftime("%Y-%m-%d %H:%M:%S")
@@ -281,10 +282,10 @@ def set_budget(
             "success": False,
             "message": f"❌ Categoría no reconocida: '{category_input}'. Ej: comida, transporte, hogar.",
         }
-    if category == "INGRESOS":
+    if category in BUDGET_BLOCKED_CATEGORIES:
         return {
             "success": False,
-            "message": "❌ No puedes definir presupuestos para INGRESOS. Los presupuestos solo aplican a gastos.",
+            "message": "❌ No puedes definir presupuestos para categorías de ingreso. Los presupuestos solo aplican a gastos.",
         }
 
     conn = get_conn()

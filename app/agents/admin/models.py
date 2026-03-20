@@ -51,6 +51,77 @@ PAYMENT_METHODS = [
     "TRANSFERENCIA",
 ]
 
+# Income categories (new; INGRESOS is legacy, kept for old data)
+INCOME_CATEGORIES = [
+    "SALARIO",
+    "FREELANCE",
+    "NEGOCIO",
+    "INVERSIONES",
+    "REEMBOLSO",
+    "REGALOS",
+    "OTROS INGRESOS",
+]
+
+# Aliases for income category detection. Order matters: more specific first.
+INCOME_CATEGORY_ALIASES = {
+    "me regalaron": "REGALOS",
+    "regalo recibido": "REGALOS",
+    "dividendos": "INVERSIONES",
+    "intereses": "INVERSIONES",
+    "rendimientos": "INVERSIONES",
+    "inversiones": "INVERSIONES",
+    "inversion": "INVERSIONES",
+    "inversión": "INVERSIONES",
+    "reembolso": "REEMBOLSO",
+    "devolucion": "REEMBOLSO",
+    "devolución": "REEMBOLSO",
+    "refund": "REEMBOLSO",
+    "proyecto freelance": "FREELANCE",
+    "freelancing": "FREELANCE",
+    "freelance": "FREELANCE",
+    "negocio propio": "NEGOCIO",
+    "ventas": "NEGOCIO",
+    "venta": "NEGOCIO",
+    "negocio": "NEGOCIO",
+    "payroll": "SALARIO",
+    "salary": "SALARIO",
+    "nómina": "SALARIO",
+    "nomina": "SALARIO",
+    "sueldo": "SALARIO",
+    "salario": "SALARIO",
+    "cobro": "OTROS INGRESOS",
+    "pago recibido": "OTROS INGRESOS",
+    "depósito": "OTROS INGRESOS",
+    "deposito": "OTROS INGRESOS",
+    "me depositaron": "OTROS INGRESOS",
+    "me pagaron": "OTROS INGRESOS",
+    "ingreso": "OTROS INGRESOS",
+}
+
+# Hints to detect income intent (centralized source of truth)
+INCOME_HINTS = frozenset({
+    "ingreso",
+    "salario",
+    "sueldo",
+    "me pagaron",
+    "me depositaron",
+    "deposito",
+    "depósito",
+    "freelance",
+    "reembolso",
+    "me regalaron",
+    "inversion",
+    "inversión",
+    "dividendos",
+    "intereses",
+    "rendimientos",
+    "pago recibido",
+    "cobro",
+})
+
+# Categories that cannot have budgets (income categories + legacy INGRESOS)
+BUDGET_BLOCKED_CATEGORIES = frozenset(INCOME_CATEGORIES) | {"INGRESOS"}
+
 CATEGORY_ALIASES = {
     "hogar": "HOGAR",
     "casa": "HOGAR",

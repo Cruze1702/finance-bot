@@ -6,6 +6,7 @@ from datetime import datetime, time as dtime
 
 from app.agents.admin.models import (
     DEFAULT_USER,
+    INCOME_HINTS,
     REPORTS_DIR as _REPORTS_DIR,
     STORAGE_DIR,
     TZ,
@@ -70,12 +71,6 @@ HELP_TEXT = (
     "• `/subscribe` (reporte semanal)\n"
     "• `/unsubscribe`\n"
 )
-
-INCOME_HINTS = {
-    "me pagaron", "deposito", "depósito", "sueldo", "nomina", "nómina", "salario", "salary",
-    "cobro", "cobraron", "pago recibido", "transferencia recibida"
-}
-
 
 def ensure_files():
     STORAGE_DIR.mkdir(parents=True, exist_ok=True)
@@ -225,6 +220,7 @@ def has_amount(text: str) -> bool:
 
 
 def looks_like_income(text: str) -> bool:
+    """Usa INCOME_HINTS centralizado de models."""
     t = text.lower()
     if t.startswith("ingreso"):
         return True
