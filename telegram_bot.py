@@ -327,7 +327,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if not has_amount(text):
-        await update.message.reply_text("No vi un monto. Ej: `Uber 150 debito`", parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text(
+            "❌ No detecté un monto en tu mensaje.\n\n"
+            "Ejemplos:\n"
+            "• uber 150 debito\n"
+            "• comida 80\n"
+            "• salario 2500\n"
+            "• me pagaron 800 freelance"
+        )
         return
 
     user = resolve_user(update)
