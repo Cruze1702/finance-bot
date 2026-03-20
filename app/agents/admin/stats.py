@@ -8,6 +8,7 @@ from typing import Any
 
 from app.agents.admin.models import TZ
 from app.agents.admin.repositories import (
+    get_all_users,
     get_conn,
     get_budgets,
     get_expense_by_category_for_month,
@@ -421,6 +422,7 @@ def compute_summary_data(
         conn.close()
 
     top_categories = list(st["by_cat"].items())[:3]
+    top_cat = top_categories[0][0] if top_categories else None
 
     return {
         "user": user_name,
@@ -432,38 +434,71 @@ def compute_summary_data(
         "month_balance": st["balance"],
         "top_categories": top_categories,
         "budget_alerts": budget_alerts,
+        "_mayor_gasto": top_cat,
+    }
+
+
+def compute_summary_data_all(month_yyyy_mm: str, today_yyyy_mm_dd: str) -> dict[str, Any]:
+    """
+    Datos para el resumen ALL: hoy (agregado), mes (compute_stats_all).
+    Reutiliza compute_stats_all y get_income_expense_for_date.
+    """
+    st = compute_stats_all(month_yyyy_mm)
+    today_income, today_expense = 0.0, 0.0
+    conn = get_conn()
+    try:
+        for user_id, _ in get_all_users(conn):
+            inc, exp = get_income_expense_for_date(conn, user_id, today_yyyy_mm_dd)
+            today_income += inc
+            today_expense += exp
+    finally:
+        conn.close()
+
+    top_cat = next(iter(st["by_cat"]), None)
+    return {
+        "user": "ALL",
+        "month": month_yyyy_mm,
+        "today_income": today_income,
+        "today_expense": today_expense,
+        "month_income": st["income"],
+        "month_expense": st["expense"],
+        "month_balance": st["balance"],
+        "top_categories": list(st["by_cat"].items())[:3],
+        "budget_alerts": [],
+        "_mayor_gasto": top_cat,
+        "_expense": st["expense"],
     }
 
 
 def format_summary(data: dict[str, Any]) -> str:
-    """Formato del resumen para Telegram. Omite secciones vacías."""
+    """
+    Formato compacto para Telegram: Hoy, Mes, promedio diario, mayor gasto.
+    Omite top categorías y alertas para mantenerlo corto.
+    """
     u = data["user"]
     m = data["month"]
+    exp = data.get("_expense", data["month_expense"])
+    mayor = data.get("_mayor_gasto") or (
+        data["top_categories"][0][0] if data.get("top_categories") else None
+    )
+    days = _days_for_daily_avg(m)
+    daily_avg = (exp / days) if days > 0 else 0.0
+
     lines = [
-        f"📋 Resumen | {u} | {m}",
+        f"📌 Summary {u} | {m}",
         "",
-        "Hoy:",
-        f"• Gastos: ${data['today_expense']:,.2f} CAD",
-        f"• Ingresos: ${data['today_income']:,.2f} CAD",
+        "Hoy",
+        f"Ingresos: ${data['today_income']:,.2f} CAD",
+        f"Gastos:   ${data['today_expense']:,.2f} CAD",
         "",
-        f"Mes ({m}):",
-        f"• Gastos: ${data['month_expense']:,.2f} CAD",
-        f"• Ingresos: ${data['month_income']:,.2f} CAD",
-        f"• Balance: ${data['month_balance']:,.2f} CAD",
+        "Mes",
+        f"Ingresos: ${data['month_income']:,.2f} CAD",
+        f"Gastos:   ${data['month_expense']:,.2f} CAD",
+        f"Balance:  ${data['month_balance']:,.2f} CAD",
+        "",
+        f"Promedio diario gasto: ${daily_avg:,.2f} CAD",
+        f"Mayor gasto: {mayor}" if mayor else "Mayor gasto: N/A",
     ]
-
-    if data["top_categories"]:
-        lines.append("")
-        lines.append("Top 3 categorías:")
-        for cat, amt in data["top_categories"]:
-            lines.append(f"• {cat}: ${amt:,.2f} CAD")
-
-    if data["budget_alerts"]:
-        lines.append("")
-        lines.append("⚠️ Presupuestos en alerta (≥80%):")
-        for a in data["budget_alerts"]:
-            lines.append(f"• {a['category']}: {a['pct']}%")
-
     return "\n".join(lines)
 
 

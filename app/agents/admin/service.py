@@ -141,16 +141,16 @@ def get_summary(
     today_str: str | None = None,
 ) -> dict:
     """
-    Resumen financiero: hoy, mes, top 3 categorías, presupuestos en alerta.
-    month y today_str se resuelven por el caller (ej. bot con TZ).
-    Si no se pasan, usa datetime.now().
+    Resumen financiero compacto: bloque personal + bloque ALL.
+    Hoy, mes, promedio diario, mayor gasto. month y today_str por caller.
     """
     month = month or datetime.now().strftime("%Y-%m")
     today_str = today_str or datetime.now().strftime("%Y-%m-%d")
 
     try:
-        data = stats.compute_summary_data(user_display_name, month, today_str)
-        msg = stats.format_summary(data)
+        data_personal = stats.compute_summary_data(user_display_name, month, today_str)
+        data_all = stats.compute_summary_data_all(month, today_str)
+        msg = stats.format_summary(data_personal) + "\n\n---\n\n" + stats.format_summary(data_all)
         return {"success": True, "message": msg}
     except Exception as e:
         return {"success": False, "message": f"❌ No pude generar resumen:\n{e}"}
