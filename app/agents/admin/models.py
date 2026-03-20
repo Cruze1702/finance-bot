@@ -3,6 +3,7 @@ Shared constants and configuration for the finance bot.
 No DB or I/O dependencies.
 """
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 # Absolute project root, derived from this file's location:
 #   models.py  →  app/agents/admin/  →  app/agents/  →  app/  →  project root
@@ -18,6 +19,16 @@ USERS = {
     "cross": "Cross",
     "pau": "Pau",
 }
+
+# Bot timezone (PST/PDT)
+TZ = ZoneInfo("America/Los_Angeles")
+
+# Telegram username -> internal user key
+USER_MAP = {
+    "cruz170t": "cross",
+}
+
+DEFAULT_USER = "cross"
 
 CATEGORIES = [
     "INGRESOS",

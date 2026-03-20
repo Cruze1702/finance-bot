@@ -3,9 +3,15 @@ import sys
 import json
 import logging
 from datetime import datetime, time as dtime
-from zoneinfo import ZoneInfo
 
-from app.agents.admin.models import USERS, REPORTS_DIR as _REPORTS_DIR, STORAGE_DIR
+from app.agents.admin.models import (
+    DEFAULT_USER,
+    REPORTS_DIR as _REPORTS_DIR,
+    STORAGE_DIR,
+    TZ,
+    USER_MAP,
+    USERS,
+)
 from app.agents.admin.service import (
     add_transaction,
     check_budget_alert,
@@ -37,19 +43,12 @@ import os
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-TZ = ZoneInfo("America/Los_Angeles")  # PST/PDT
 REPORTS_DIR = _REPORTS_DIR
 SUBS_FILE = STORAGE_DIR / "subscribers.json"
 
 # Weekly report schedule: Sunday 09:00 PST
 WEEKLY_TIME = dtime(9, 0)
 WEEKLY_DAY = 6  # 0=Mon ... 6=Sun
-
-USER_MAP = {
-    "cruz170t": "cross",
-    # "username_de_pau": "pau",
-}
-DEFAULT_USER = "cross"
 
 logging.basicConfig(
     level=logging.INFO,
