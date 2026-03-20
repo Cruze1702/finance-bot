@@ -1,9 +1,12 @@
 """
 Monthly statistics computation and formatting.
 """
+import calendar
 import re
+from datetime import date, datetime
 from typing import Any
 
+from app.agents.admin.models import TZ
 from app.agents.admin.repositories import (
     get_conn,
     get_budgets,
@@ -13,12 +16,22 @@ from app.agents.admin.repositories import (
 
 
 def month_range(month_yyyy_mm: str) -> tuple[str, str]:
-    from datetime import date
-
     y, m = map(int, month_yyyy_mm.split("-"))
     start = date(y, m, 1)
     end = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
     return start.isoformat(), end.isoformat()
+
+
+def _days_for_daily_avg(month_yyyy_mm: str) -> int:
+    """
+    Días a usar para promedio diario: días transcurridos si es mes actual,
+    total de días del mes si es mes pasado.
+    """
+    y, m = map(int, month_yyyy_mm.split("-"))
+    today = datetime.now(TZ).date()
+    if today.year == y and today.month == m:
+        return today.day
+    return calendar.monthrange(y, m)[1]
 
 
 def prev_month(month_yyyy_mm: str) -> str:
@@ -120,8 +133,6 @@ def compute_stats_all(month_yyyy_mm: str) -> dict[str, Any]:
     No filtra por user_id. Para stats por usuario, usar compute_stats.
     prev_exp se deja en 0 (el resumen CLI no lo muestra).
     """
-    from datetime import date
-
     y, m = map(int, month_yyyy_mm.split("-"))
     start = date(y, m, 1)
     end = date(y + 1, 1, 1) if m == 12 else date(y, m + 1, 1)
@@ -165,13 +176,14 @@ def compute_stats_all(month_yyyy_mm: str) -> dict[str, Any]:
 
 
 def format_stats(st: dict[str, Any]) -> str:
-    """Formato para Telegram (Markdown). Mismo output que telegram_bot actual."""
+    """Formato para Telegram (Markdown). Incluye porcentajes, promedio diario, ahorro, mayor gasto."""
     m = st["month"]
     u = st["user"].upper()
     inc = st["income"]
     exp = st["expense"]
     bal = st["balance"]
     prev = st["prev_exp"]
+    by_cat = st["by_cat"]
 
     diff = exp - prev
     pct = (diff / prev * 100.0) if prev > 0 else 0.0
@@ -180,6 +192,18 @@ def format_stats(st: dict[str, Any]) -> str:
         variacion_line = f"Variación: `${diff:,.2f} CAD` ({pct:.1f}%)"
     else:
         variacion_line = "Variación: N/A (sin datos previos)"
+
+    # Promedio diario
+    days = _days_for_daily_avg(m)
+    daily_avg = (exp / days) if days > 0 else 0.0
+    daily_line = f"Promedio diario gasto: `${daily_avg:,.2f} CAD`"
+
+    # Tasa de ahorro
+    ahorro_line = f"Ahorro: {(bal / inc * 100):.1f}%" if inc > 0 else "Ahorro: N/A"
+
+    # Mayor gasto
+    top_cat = next(iter(by_cat), None)
+    mayor_line = f"Mayor gasto: {top_cat}" if top_cat else "Mayor gasto: N/A"
 
     lines = [
         f"📊 *Stats {u} | {m}*",
@@ -191,14 +215,20 @@ def format_stats(st: dict[str, Any]) -> str:
         f"Mes anterior (gastos): `${prev:,.2f} CAD`",
         variacion_line,
         "",
+        daily_line,
+        ahorro_line,
+        mayor_line,
+        "",
         "*Top categorías (egresos):*",
     ]
-    top = list(st["by_cat"].items())[:7]
+    top = list(by_cat.items())[:7]
+    total_exp = exp
     if not top:
         lines.append("- sin gastos")
     else:
         for cat, val in top:
-            lines.append(f"- {cat}: `${val:,.2f} CAD`")
+            pct_cat = (val / total_exp * 100.0) if total_exp > 0 else 0.0
+            lines.append(f"- {cat}: `${val:,.2f} CAD` ({pct_cat:.1f}%)")
     return "\n".join(lines)
 
 
