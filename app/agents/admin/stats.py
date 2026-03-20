@@ -176,6 +176,11 @@ def format_stats(st: dict[str, Any]) -> str:
     diff = exp - prev
     pct = (diff / prev * 100.0) if prev > 0 else 0.0
 
+    if prev > 0:
+        variacion_line = f"Variación: `${diff:,.2f} CAD` ({pct:.1f}%)"
+    else:
+        variacion_line = "Variación: N/A (sin datos previos)"
+
     lines = [
         f"📊 *Stats {u} | {m}*",
         "",
@@ -184,7 +189,7 @@ def format_stats(st: dict[str, Any]) -> str:
         f"Balance:  `${bal:,.2f} CAD`",
         "",
         f"Mes anterior (gastos): `${prev:,.2f} CAD`",
-        f"Variación: `${diff:,.2f} CAD` ({pct:.1f}%)",
+        variacion_line,
         "",
         "*Top categorías (egresos):*",
     ]
