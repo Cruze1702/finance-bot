@@ -27,7 +27,7 @@ from app.agents.admin.service import (
     reset_month_data,
     set_budget,
 )
-from app.agents.admin.stats import compute_stats, format_stats
+from app.agents.admin.stats import compute_stats, compute_stats_all, format_stats
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -160,9 +160,12 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     parts = (update.message.text or "").strip().split()
     m = normalize_month(parts[1]) if len(parts) >= 2 else current_month()
     user = resolve_user(update)
+    display_name = USERS.get(user, user)
     try:
-        st = compute_stats(user, m)
-        await update.message.reply_text(format_stats(st), parse_mode=ParseMode.MARKDOWN)
+        st_personal = compute_stats(display_name, m)
+        st_all = compute_stats_all(m)
+        msg = format_stats(st_personal) + "\n\n---\n\n" + format_stats(st_all)
+        await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
     except Exception as e:
         await update.message.reply_text(f"❌ No pude generar stats:\n{e}")
 
