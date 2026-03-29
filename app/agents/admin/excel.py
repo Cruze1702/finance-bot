@@ -52,19 +52,26 @@ def _current_month() -> str:
 
 def _get_excel_summary_data(month_prefix: str) -> dict:
     """
-    Datos para la hoja RESUMEN: mes, ingresos por usuario, gastos, balance,
-    top 5 categorías, presupuestos agregados (combinados de todos los usuarios).
-    Reutiliza stats.compute_stats_all, stats.compute_stats y repositories.
+    Datos para la hoja RESUMEN: mes, ingresos/gasto/balance por usuario,
+    totales globales, comparativo vs mes anterior, top 5 categorías,
+    presupuestos agregados (combinados de todos los usuarios).
+    Reutiliza stats.compute_stats_all, stats.compute_stats, stats.prev_month y repositories.
     """
     st = stats.compute_stats_all(month_prefix)
+    prev_m = stats.prev_month(month_prefix)
+    st_prev = stats.compute_stats_all(prev_m)
     start, end = stats.month_range(month_prefix)
 
     conn = get_conn()
     income_by_user = []
+    expense_by_user = []
+    balance_by_user = []
     try:
         for user_id, user_name in get_all_users(conn):
             st_user = stats.compute_stats(user_name, month_prefix)
             income_by_user.append((user_name, st_user["income"]))
+            expense_by_user.append((user_name, st_user["expense"]))
+            balance_by_user.append((user_name, st_user["balance"]))
     finally:
         conn.close()
 
@@ -114,9 +121,15 @@ def _get_excel_summary_data(month_prefix: str) -> dict:
     return {
         "month": month_prefix,
         "income_by_user": income_by_user,
+        "expense_by_user": expense_by_user,
+        "balance_by_user": balance_by_user,
         "income_total": st["income"],
         "expense": st["expense"],
         "balance": st["balance"],
+        "prev_month": prev_m,
+        "prev_income_total": st_prev["income"],
+        "prev_expense_total": st_prev["expense"],
+        "prev_balance_total": st_prev["balance"],
         "top_categories": list(st["by_cat"].items())[:5],
         "budget_rows": budget_rows,
     }
@@ -125,7 +138,8 @@ def _get_excel_summary_data(month_prefix: str) -> dict:
 def _build_resumen_sheet(wb, month_prefix: str) -> None:
     """
     Crea la hoja RESUMEN al inicio del workbook.
-    Incluye: mes, ingresos, gastos, balance, top 5 categorías, presupuestos.
+    Incluye: mes, ingresos/gasto/balance por usuario, totales globales,
+    comparativo vs mes anterior, top 5 categorías, presupuestos.
     """
     data = _get_excel_summary_data(month_prefix)
 
@@ -147,6 +161,16 @@ def _build_resumen_sheet(wb, month_prefix: str) -> None:
         ws.cell(row=row, column=2).value = inc
         ws.cell(row=row, column=2).number_format = CURRENCY_FORMAT
         row += 1
+    for user_name, exp in data["expense_by_user"]:
+        ws.cell(row=row, column=1).value = f"Gasto {user_name}"
+        ws.cell(row=row, column=2).value = exp
+        ws.cell(row=row, column=2).number_format = CURRENCY_FORMAT
+        row += 1
+    for user_name, bal in data["balance_by_user"]:
+        ws.cell(row=row, column=1).value = f"Balance {user_name}"
+        ws.cell(row=row, column=2).value = bal
+        ws.cell(row=row, column=2).number_format = CURRENCY_FORMAT
+        row += 1
     ws.cell(row=row, column=1).value = "Ingresos Totales"
     ws.cell(row=row, column=2).value = data["income_total"]
     ws.cell(row=row, column=2).number_format = CURRENCY_FORMAT
@@ -159,6 +183,32 @@ def _build_resumen_sheet(wb, month_prefix: str) -> None:
     ws.cell(row=row, column=2).value = data["balance"]
     ws.cell(row=row, column=2).number_format = CURRENCY_FORMAT
     row += 2
+
+    pm = data["prev_month"]
+    ws.cell(row=row, column=1).value = f"Comparativo global vs {pm}"
+    row += 1
+    ws.cell(row=row, column=1).value = ""
+    ws.cell(row=row, column=2).value = f"Mes actual ({data['month']})"
+    ws.cell(row=row, column=3).value = f"Mes anterior ({pm})"
+    ws.cell(row=row, column=4).value = "Diferencia"
+    row += 1
+    curr_inc, prev_inc = data["income_total"], data["prev_income_total"]
+    curr_exp, prev_exp = data["expense"], data["prev_expense_total"]
+    curr_bal, prev_bal = data["balance"], data["prev_balance_total"]
+    for label, c, p in (
+        ("Ingresos", curr_inc, prev_inc),
+        ("Gastos", curr_exp, prev_exp),
+        ("Balance", curr_bal, prev_bal),
+    ):
+        ws.cell(row=row, column=1).value = label
+        ws.cell(row=row, column=2).value = c
+        ws.cell(row=row, column=2).number_format = CURRENCY_FORMAT
+        ws.cell(row=row, column=3).value = p
+        ws.cell(row=row, column=3).number_format = CURRENCY_FORMAT
+        ws.cell(row=row, column=4).value = c - p
+        ws.cell(row=row, column=4).number_format = CURRENCY_FORMAT
+        row += 1
+    row += 1
 
     ws.cell(row=row, column=1).value = "Top 5 categorías de gasto"
     row += 1
