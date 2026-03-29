@@ -5,7 +5,7 @@ Orchestrates parser, repositories, stats, and excel.
 from datetime import datetime
 
 from app.agents.admin import excel
-from app.agents.admin.models import BUDGET_BLOCKED_CATEGORIES, DEFAULT_CURRENCY, USERS
+from app.agents.admin.models import BUDGET_BLOCKED_CATEGORIES, DEFAULT_CURRENCY, TZ, USERS
 from app.agents.admin.parser import (
     detect_category,
     detect_income_category,
@@ -85,7 +85,7 @@ def add_transaction(user_display_name: str, text: str) -> dict:
         tx_type = "INGRESO" if is_ingreso(main_text) else "EGRESO"
         category = detect_income_category(main_text) if tx_type == "INGRESO" else detect_category(main_text)
         payment = detect_payment(main_text)
-        now = datetime.now()
+        now = datetime.now(TZ)
         ts = now.strftime("%Y-%m-%d %H:%M:%S")
         date_str = now.strftime("%Y-%m-%d")
 
@@ -124,8 +124,8 @@ def get_weekly_report(
     Reporte semanal ejecutivo: ingresos, gastos, balance, top 3, alertas, excedidas.
     Reutiliza compute_summary_data y format_weekly_report.
     """
-    month = month or datetime.now().strftime("%Y-%m")
-    today_str = today_str or datetime.now().strftime("%Y-%m-%d")
+    month = month or datetime.now(TZ).strftime("%Y-%m")
+    today_str = today_str or datetime.now(TZ).strftime("%Y-%m-%d")
 
     try:
         data = stats.compute_summary_data(user_display_name, month, today_str)
@@ -144,8 +144,8 @@ def get_summary(
     Resumen financiero compacto: bloque personal + bloque ALL.
     Hoy, mes, promedio diario, mayor gasto. month y today_str por caller.
     """
-    month = month or datetime.now().strftime("%Y-%m")
-    today_str = today_str or datetime.now().strftime("%Y-%m-%d")
+    month = month or datetime.now(TZ).strftime("%Y-%m")
+    today_str = today_str or datetime.now(TZ).strftime("%Y-%m-%d")
 
     try:
         data_personal = stats.compute_summary_data(user_display_name, month, today_str)
@@ -161,7 +161,7 @@ def resumen_mes(user: str | None = None) -> None:
     Imprime resumen del mes actual.
     user: "Cross", "Pau" o None para agregado de todos los usuarios.
     """
-    month = datetime.now().strftime("%Y-%m")
+    month = datetime.now(TZ).strftime("%Y-%m")
     if user is None:
         st = stats.compute_stats_all(month)
     else:
@@ -322,7 +322,7 @@ def get_budget_status(
             "message": f"❌ Categoría no reconocida: '{category_input}'. Ej: comida, transporte, hogar.",
         }
 
-    month = month or datetime.now().strftime("%Y-%m")
+    month = month or datetime.now(TZ).strftime("%Y-%m")
     start, end = stats.month_range(month)
 
     conn = get_conn()
@@ -360,7 +360,7 @@ def list_budgets_status(
     Lista presupuestos con gastado, disponible y porcentaje.
     Solo categorías con presupuesto definido. Si no hay, error claro.
     """
-    month = month or datetime.now().strftime("%Y-%m")
+    month = month or datetime.now(TZ).strftime("%Y-%m")
     start, end = stats.month_range(month)
 
     conn = get_conn()
@@ -400,7 +400,7 @@ def check_budget_alert(
     Devuelve None si no hay presupuesto, budget_amt <= 0, no alcanza 80%, o ya se alertó.
     Devuelve {"message": "..."} con el texto de alerta en caso contrario.
     """
-    month = month or datetime.now().strftime("%Y-%m")
+    month = month or datetime.now(TZ).strftime("%Y-%m")
     start, end = stats.month_range(month)
 
     conn = get_conn()
@@ -461,7 +461,7 @@ def reset_month_data(user_display_name: str) -> dict:
     Borra transacciones y estado de alertas del mes actual para el usuario.
     No toca presupuestos ni usuarios.
     """
-    month = datetime.now().strftime("%Y-%m")
+    month = datetime.now(TZ).strftime("%Y-%m")
     start, end = stats.month_range(month)
 
     conn = get_conn()

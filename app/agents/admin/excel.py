@@ -9,7 +9,7 @@ from pathlib import Path
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import PatternFill
 
-from app.agents.admin.models import EXPORT_HEADERS, REPORTS_DIR, TEMPLATE_PATH
+from app.agents.admin.models import EXPORT_HEADERS, REPORTS_DIR, TEMPLATE_PATH, TZ
 from app.agents.admin.repositories import (
     get_conn,
     get_all_users,
@@ -47,7 +47,7 @@ def _fix_dashboard_formulas(wb) -> None:
 
 
 def _current_month() -> str:
-    return datetime.now().strftime("%Y-%m")
+    return datetime.now(TZ).strftime("%Y-%m")
 
 
 def _get_excel_summary_data(month_prefix: str) -> dict:
