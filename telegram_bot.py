@@ -59,8 +59,8 @@ logging.basicConfig(
 log = logging.getLogger("telegram_finance_bot")
 
 HELP_TEXT = (
-    "👋 *Finance Bot*\n\n"
-    "*Comandos:*\n"
+    "👋 Finance Bot\n\n"
+    "Comandos:\n"
     "• /start — esta ayuda\n"
     "• /whoami — tu usuario detectado\n"
     "• /stats — estadísticas (tú + total)\n"
@@ -70,11 +70,11 @@ HELP_TEXT = (
     "• /budgets — presupuestos\n"
     "• /subscribe / /unsubscribe — reporte semanal\n"
     "• /reset_month — borrar datos del mes actual\n\n"
-    "*Texto libre (ejemplos):*\n"
-    "• `uber 150 debito` — gasto\n"
-    "• `salario 2500` — ingreso\n"
-    "• `budget comida 500` — presupuesto\n"
-    "• `delete last` / `edit last 120`\n"
+    "Texto libre (ejemplos):\n"
+    "• uber 150 debito — gasto\n"
+    "• salario 2500 — ingreso\n"
+    "• budget comida 500 — presupuesto\n"
+    "• delete last / edit last 120\n"
 )
 
 def ensure_files():
@@ -123,7 +123,7 @@ def normalize_month(m: str | None) -> str | None:
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(HELP_TEXT, parse_mode=ParseMode.MARKDOWN)
+    await update.message.reply_text(HELP_TEXT)
 
 
 async def cmd_whoami(update: Update, context: ContextTypes.DEFAULT_TYPE):
