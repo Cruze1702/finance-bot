@@ -36,6 +36,9 @@ from app.agents.admin.repositories import (
 )
 from app.agents.admin import stats
 
+# Misma ventana que `last` / delete <n> / edit <n> (índice 1 = más reciente).
+RECENT_TRANSACTIONS_LIMIT = 5
+
 
 def add_transaction(user_display_name: str, text: str) -> dict:
     """
@@ -183,7 +186,7 @@ def export_movimientos() -> None:
 
 
 def list_last_transactions(
-    user_display_name: str, limit: int = 5
+    user_display_name: str, limit: int = RECENT_TRANSACTIONS_LIMIT,
 ) -> dict:
     """
     Últimas N transacciones del usuario.
@@ -211,10 +214,13 @@ def list_last_transactions(
         conn.close()
 
 
-def delete_last_transaction(user_display_name: str) -> dict:
+def delete_recent_transaction_by_index(
+    user_display_name: str,
+    index: int,
+    limit: int = RECENT_TRANSACTIONS_LIMIT,
+) -> dict:
     """
-    Borra la última transacción del usuario.
-    Devuelve {success, message}.
+    Borra la transacción en la posición index (1 = más reciente) entre las últimas `limit`.
     """
     conn = get_conn()
     try:
@@ -222,10 +228,18 @@ def delete_last_transaction(user_display_name: str) -> dict:
         if user_id is None:
             return {"success": False, "message": "❌ Usuario no encontrado"}
 
-        row = get_last_transaction(conn, user_id)
-        if row is None:
-            return {"success": False, "message": "❌ No había transacciones."}
+        rows = get_last_transactions(conn, user_id, limit)
+        if not rows:
+            return {"success": False, "message": "❌ No hay transacciones."}
 
+        n = len(rows)
+        if index < 1 or index > n:
+            return {
+                "success": False,
+                "message": f"❌ Índice inválido. Usa un número entre 1 y {n} (escribe `last` para ver la lista).",
+            }
+
+        row = rows[index - 1]
         tx_id, date_s, desc, cat, pm, tx_type, amt, curr = (
             row[0], row[1], row[2] or "", row[3], row[4], row[5] or "", float(row[6] or 0), row[7] or "CAD"
         )
@@ -238,12 +252,14 @@ def delete_last_transaction(user_display_name: str) -> dict:
         conn.close()
 
 
-def edit_last_transaction_amount(
-    user_display_name: str, new_amount: float
+def edit_recent_transaction_amount_by_index(
+    user_display_name: str,
+    index: int,
+    new_amount: float,
+    limit: int = RECENT_TRANSACTIONS_LIMIT,
 ) -> dict:
     """
-    Actualiza el monto de la última transacción del usuario.
-    Devuelve {success, message}.
+    Actualiza el monto de la transacción en la posición index (1 = más reciente).
     """
     if new_amount <= 0:
         return {"success": False, "message": "❌ El monto debe ser mayor a 0."}
@@ -254,10 +270,18 @@ def edit_last_transaction_amount(
         if user_id is None:
             return {"success": False, "message": "❌ Usuario no encontrado"}
 
-        row = get_last_transaction(conn, user_id)
-        if row is None:
-            return {"success": False, "message": "❌ No había transacciones."}
+        rows = get_last_transactions(conn, user_id, limit)
+        if not rows:
+            return {"success": False, "message": "❌ No hay transacciones."}
 
+        n = len(rows)
+        if index < 1 or index > n:
+            return {
+                "success": False,
+                "message": f"❌ Índice inválido. Usa un número entre 1 y {n} (escribe `last` para ver la lista).",
+            }
+
+        row = rows[index - 1]
         tx_id, old_amt = row[0], float(row[6] or 0)
         update_transaction_amount(conn, tx_id, new_amount)
         conn.commit()
@@ -265,6 +289,18 @@ def edit_last_transaction_amount(
         return {"success": True, "message": msg}
     finally:
         conn.close()
+
+
+def delete_last_transaction(user_display_name: str) -> dict:
+    """Borra la última transacción del usuario (equivalente a delete 1)."""
+    return delete_recent_transaction_by_index(user_display_name, 1)
+
+
+def edit_last_transaction_amount(
+    user_display_name: str, new_amount: float
+) -> dict:
+    """Actualiza el monto de la última transacción (equivalente a edit 1 <monto>)."""
+    return edit_recent_transaction_amount_by_index(user_display_name, 1, new_amount)
 
 
 def set_budget(

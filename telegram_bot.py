@@ -18,7 +18,9 @@ from app.agents.admin.service import (
     check_budget_alert,
     delete_budget_for_category,
     delete_last_transaction,
+    delete_recent_transaction_by_index,
     edit_last_transaction_amount,
+    edit_recent_transaction_amount_by_index,
     export_excel_template,
     get_budget_status,
     get_summary,
@@ -283,6 +285,41 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(result["message"])
         else:
             await update.message.reply_text("❌ Uso: delete budget <categoría>")
+        return
+
+    parts_del = text.split()
+    if (
+        len(parts_del) == 2
+        and parts_del[0].lower() == "delete"
+        and parts_del[1].isdigit()
+    ):
+        user = resolve_user(update)
+        display_name = USERS.get(user, user)
+        result = delete_recent_transaction_by_index(display_name, int(parts_del[1]))
+        await update.message.reply_text(result["message"])
+        return
+
+    parts_edit = text.split(maxsplit=2)
+    if len(parts_edit) == 2 and parts_edit[0].lower() == "edit" and parts_edit[1].isdigit():
+        await update.message.reply_text("❌ Uso: edit <n> <monto>. Ej: edit 1 145.50")
+        return
+    if (
+        len(parts_edit) >= 3
+        and parts_edit[0].lower() == "edit"
+        and parts_edit[1].isdigit()
+    ):
+        user = resolve_user(update)
+        display_name = USERS.get(user, user)
+        try:
+            amt = float(parts_edit[2])
+        except ValueError:
+            await update.message.reply_text("❌ Monto inválido. Ej: edit 1 145.50")
+            return
+        if amt <= 0:
+            await update.message.reply_text("❌ El monto debe ser mayor a 0.")
+            return
+        result = edit_recent_transaction_amount_by_index(display_name, int(parts_edit[1]), amt)
+        await update.message.reply_text(result["message"])
         return
 
     if low.startswith("budget "):
