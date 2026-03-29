@@ -60,16 +60,21 @@ log = logging.getLogger("telegram_finance_bot")
 
 HELP_TEXT = (
     "👋 *Finance Bot*\n\n"
-    "✅ Escribe natural:\n"
-    "• `Uber 150 debito`\n"
-    "• `Costco 120 credito`\n"
-    "• `Ingreso 2500 sueldo`\n\n"
-    "Comandos:\n"
-    "• `stats` o `/stats`\n"
-    "• `excel` o `/excel`\n"
-    "• `/whoami`\n"
-    "• `/subscribe` (reporte semanal)\n"
-    "• `/unsubscribe`\n"
+    "*Comandos:*\n"
+    "• /start — esta ayuda\n"
+    "• /whoami — tu usuario detectado\n"
+    "• /stats — estadísticas (tú + total)\n"
+    "• /summary — resumen rápido (tú + total)\n"
+    "• /excel — exportar mes\n"
+    "• /last — últimas transacciones\n"
+    "• /budgets — presupuestos\n"
+    "• /subscribe / /unsubscribe — reporte semanal\n"
+    "• /reset_month — borrar datos del mes actual\n\n"
+    "*Texto libre (ejemplos):*\n"
+    "• `uber 150 debito` — gasto\n"
+    "• `salario 2500` — ingreso\n"
+    "• `budget comida 500` — presupuesto\n"
+    "• `delete last` / `edit last 120`\n"
 )
 
 def ensure_files():

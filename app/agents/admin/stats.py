@@ -233,10 +233,14 @@ def format_stats(st: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# --- Analytics helpers below are not wired to telegram_bot or CLI today; kept for future use. ---
+
+
 def compute_category_breakdown(user_name: str, month_yyyy_mm: str) -> list[dict[str, Any]]:
     """
     Gasto total por categoría con porcentaje sobre el total de egresos.
     Reutiliza compute_stats; no hace queries adicionales.
+    (Not used by bot/CLI in this repo; see module note above.)
     """
     st = compute_stats(user_name, month_yyyy_mm)
     by_cat = st["by_cat"]
@@ -252,6 +256,7 @@ def compute_payment_method_breakdown(user_name: str, month_yyyy_mm: str) -> list
     """
     Gasto por método de pago (solo egresos).
     Incluye porcentaje sobre el total de egresos del mes.
+    (Not used by bot/CLI in this repo; see module note above.)
     """
     start, end = month_range(month_yyyy_mm)
     conn = get_conn()
@@ -297,6 +302,7 @@ def compute_top_merchants(
     Comercios más frecuentes basados en description (solo egresos).
     Extrae la parte antes del primer número como merchant.
     Ordenado por cantidad de transacciones (más frecuente primero).
+    (Not used by bot/CLI in this repo; see module note above.)
     """
     start, end = month_range(month_yyyy_mm)
     conn = get_conn()
@@ -352,6 +358,7 @@ def compute_month_comparison(user_name: str, month_yyyy_mm: str) -> dict[str, An
     """
     Compara ingresos y gastos del mes actual vs mes anterior.
     Devuelve porcentaje de cambio. Reutiliza compute_stats.
+    (Not used by bot/CLI in this repo; see module note above.)
     """
     st_curr = compute_stats(user_name, month_yyyy_mm)
     prev_m = prev_month(month_yyyy_mm)

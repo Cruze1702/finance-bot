@@ -44,13 +44,6 @@ CATEGORIES = [
     "AHORROS",
 ]
 
-PAYMENT_METHODS = [
-    "TARJETA DE CREDITO",
-    "DEBITO",
-    "CASH",
-    "TRANSFERENCIA",
-]
-
 # Income categories (new; INGRESOS is legacy, kept for old data)
 INCOME_CATEGORIES = [
     "SALARIO",
