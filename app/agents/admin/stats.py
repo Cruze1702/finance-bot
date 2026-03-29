@@ -484,11 +484,12 @@ def compute_summary_data_all(month_yyyy_mm: str, today_yyyy_mm_dd: str) -> dict[
 
 def format_summary(data: dict[str, Any]) -> str:
     """
-    Resumen compacto: hoy, mes, vs mes anterior, proyección fin de mes, insights, mayor gasto.
+    Resumen compacto: hoy, mes, vs mes anterior, proyección, alertas determinísticas, mayor gasto.
     """
     u = data["user"]
     m = data["month"]
     exp = data.get("_expense", data["month_expense"])
+    inc_m = data["month_income"]
     bal = data["month_balance"]
     prev_e = float(data.get("prev_month_expense") or 0.0)
     mayor = data.get("_mayor_gasto") or (
@@ -505,7 +506,7 @@ def format_summary(data: dict[str, Any]) -> str:
         f"📌 Summary {u} | {m}",
         "",
         f"Hoy — Ing. ${data['today_income']:,.2f} · Gast. ${data['today_expense']:,.2f} CAD",
-        f"Mes — Ing. ${data['month_income']:,.2f} · Gast. ${exp:,.2f} · Bal. ${bal:,.2f} CAD",
+        f"Mes — Ing. ${inc_m:,.2f} · Gast. ${exp:,.2f} · Bal. ${bal:,.2f} CAD",
         "",
     ]
 
@@ -519,13 +520,28 @@ def format_summary(data: dict[str, Any]) -> str:
     lines.append(f"Proy. fin de mes: ~${projected:,.2f} CAD")
     lines.append("")
 
-    insights: list[str] = []
+    alerts: list[str] = []
     if prev_e > 0 and exp > prev_e:
-        insights.append("⚠️ Gasto por encima del mes anterior")
+        pct_up = (exp - prev_e) / prev_e * 100.0
+        alerts.append(f"⚠️ Gastas +{pct_up:.1f}% vs mes anterior")
+
+    if exp > 0 and data.get("top_categories"):
+        cat0, amt0 = data["top_categories"][0]
+        dom_pct = (float(amt0) / exp) * 100.0
+        if dom_pct >= 50.0:
+            alerts.append(f"⚠️ {cat0} representa {dom_pct:.1f}% del gasto")
+
+    if inc_m > 0 and projected > inc_m:
+        alerts.append("⚠️ Al ritmo actual cerrarías en déficit")
+
+    alerts = alerts[:3]
+    if alerts:
+        lines.append("Alertas:")
+        lines.extend(alerts)
+        lines.append("")
+
     if bal > 0:
-        insights.append("✓ Balance positivo")
-    if insights:
-        lines.extend(insights)
+        lines.append("✓ Balance positivo")
         lines.append("")
 
     lines.append(f"Mayor gasto: {mayor}" if mayor else "Mayor gasto: N/A")
