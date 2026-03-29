@@ -408,6 +408,7 @@ def compute_summary_data(
                 "month_balance": st["balance"],
                 "top_categories": [],
                 "budget_alerts": [],
+                "prev_month_expense": st["prev_exp"],
             }
 
         user_id = row[0]
@@ -442,6 +443,7 @@ def compute_summary_data(
         "top_categories": top_categories,
         "budget_alerts": budget_alerts,
         "_mayor_gasto": top_cat,
+        "prev_month_expense": st["prev_exp"],
     }
 
 
@@ -451,6 +453,8 @@ def compute_summary_data_all(month_yyyy_mm: str, today_yyyy_mm_dd: str) -> dict[
     Reutiliza compute_stats_all y get_income_expense_for_date.
     """
     st = compute_stats_all(month_yyyy_mm)
+    st_prev = compute_stats_all(prev_month(month_yyyy_mm))
+    prev_month_expense_all = st_prev["expense"]
     today_income, today_expense = 0.0, 0.0
     conn = get_conn()
     try:
@@ -474,38 +478,57 @@ def compute_summary_data_all(month_yyyy_mm: str, today_yyyy_mm_dd: str) -> dict[
         "budget_alerts": [],
         "_mayor_gasto": top_cat,
         "_expense": st["expense"],
+        "prev_month_expense": prev_month_expense_all,
     }
 
 
 def format_summary(data: dict[str, Any]) -> str:
     """
-    Formato compacto para Telegram: Hoy, Mes, promedio diario, mayor gasto.
-    Omite top categorías y alertas para mantenerlo corto.
+    Resumen compacto: hoy, mes, vs mes anterior, proyección fin de mes, insights, mayor gasto.
     """
     u = data["user"]
     m = data["month"]
     exp = data.get("_expense", data["month_expense"])
+    bal = data["month_balance"]
+    prev_e = float(data.get("prev_month_expense") or 0.0)
     mayor = data.get("_mayor_gasto") or (
         data["top_categories"][0][0] if data.get("top_categories") else None
     )
-    days = _days_for_daily_avg(m)
-    daily_avg = (exp / days) if days > 0 else 0.0
+
+    days_elapsed = _days_for_daily_avg(m)
+    y, mon = map(int, m.split("-"))
+    days_total = calendar.monthrange(y, mon)[1]
+    daily_avg = (exp / days_elapsed) if days_elapsed > 0 else 0.0
+    projected = daily_avg * days_total
 
     lines = [
         f"📌 Summary {u} | {m}",
         "",
-        "Hoy",
-        f"Ingresos: ${data['today_income']:,.2f} CAD",
-        f"Gastos:   ${data['today_expense']:,.2f} CAD",
+        f"Hoy — Ing. ${data['today_income']:,.2f} · Gast. ${data['today_expense']:,.2f} CAD",
+        f"Mes — Ing. ${data['month_income']:,.2f} · Gast. ${exp:,.2f} · Bal. ${bal:,.2f} CAD",
         "",
-        "Mes",
-        f"Ingresos: ${data['month_income']:,.2f} CAD",
-        f"Gastos:   ${data['month_expense']:,.2f} CAD",
-        f"Balance:  ${data['month_balance']:,.2f} CAD",
-        "",
-        f"Promedio diario gasto: ${daily_avg:,.2f} CAD",
-        f"Mayor gasto: {mayor}" if mayor else "Mayor gasto: N/A",
     ]
+
+    if prev_e > 0:
+        pct_vs = (exp - prev_e) / prev_e * 100.0
+        sign = "+" if pct_vs >= 0 else ""
+        lines.append(f"Vs mes ant. (gasto): {sign}{pct_vs:.1f}%")
+    else:
+        lines.append("Vs mes ant. (gasto): N/A")
+
+    lines.append(f"Proy. fin de mes: ~${projected:,.2f} CAD")
+    lines.append("")
+
+    insights: list[str] = []
+    if prev_e > 0 and exp > prev_e:
+        insights.append("⚠️ Gasto por encima del mes anterior")
+    if bal > 0:
+        insights.append("✓ Balance positivo")
+    if insights:
+        lines.extend(insights)
+        lines.append("")
+
+    lines.append(f"Mayor gasto: {mayor}" if mayor else "Mayor gasto: N/A")
     return "\n".join(lines)
 
 
