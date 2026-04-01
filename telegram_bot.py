@@ -19,6 +19,7 @@ from app.agents.admin.service import (
     delete_budget_for_category,
     delete_last_transaction,
     delete_recent_transaction_by_index,
+    edit_category_by_index,
     edit_last_transaction_amount,
     edit_recent_transaction_amount_by_index,
     export_excel_template,
@@ -296,6 +297,23 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = resolve_user(update)
         display_name = USERS.get(user, user)
         result = delete_recent_transaction_by_index(display_name, int(parts_del[1]))
+        await update.message.reply_text(result["message"])
+        return
+
+    if re.match(r"(?i)^edit\s+\d+\s+categoria$", text.strip()):
+        await update.message.reply_text("❌ Uso: edit <n> categoria <categoria>")
+        return
+
+    m_edit_cat = re.match(r"(?i)^edit\s+(\d+)\s+categoria\s+(.+)$", text.strip())
+    if m_edit_cat:
+        user = resolve_user(update)
+        display_name = USERS.get(user, user)
+        idx = int(m_edit_cat.group(1))
+        cat_raw = m_edit_cat.group(2).strip()
+        if not cat_raw:
+            await update.message.reply_text("❌ Uso: edit <n> categoria <categoria>")
+            return
+        result = edit_category_by_index(display_name, idx, cat_raw)
         await update.message.reply_text(result["message"])
         return
 

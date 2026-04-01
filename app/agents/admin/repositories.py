@@ -145,6 +145,13 @@ def update_transaction_amount(
     conn.execute("UPDATE transactions SET amount = ? WHERE id = ?", (new_amount, tx_id))
 
 
+def update_transaction_category(
+    conn: sqlite3.Connection, tx_id: int, category: str
+) -> None:
+    """Actualiza la categoría de una transacción."""
+    conn.execute("UPDATE transactions SET category = ? WHERE id = ?", (category, tx_id))
+
+
 def upsert_budget(
     conn: sqlite3.Connection,
     user_id: int,

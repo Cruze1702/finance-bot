@@ -23,6 +23,7 @@ from app.agents.admin.repositories import (
     get_last_transactions,
     delete_transaction_by_id,
     update_transaction_amount,
+    update_transaction_category,
     insert_transaction,
     upsert_budget,
     get_budget,
@@ -301,6 +302,60 @@ def edit_last_transaction_amount(
 ) -> dict:
     """Actualiza el monto de la última transacción (equivalente a edit 1 <monto>)."""
     return edit_recent_transaction_amount_by_index(user_display_name, 1, new_amount)
+
+
+def edit_category_by_index(
+    user_display_name: str,
+    index: int,
+    category_input: str,
+    limit: int = RECENT_TRANSACTIONS_LIMIT,
+) -> dict:
+    """
+    Actualiza la categoría de la transacción en la posición index (1 = más reciente).
+    EGRESO: categoría con normalize_category (comando explícito; misma resolución que la validación).
+    INGRESO: resolve_income_category_for_input o normalize_category (p. ej. INGRESOS).
+    """
+    if index < 1:
+        return {"success": False, "message": "❌ Índice inválido. Usa last."}
+
+    conn = get_conn()
+    try:
+        user_id = get_user_id(conn, user_display_name)
+        if user_id is None:
+            return {"success": False, "message": "❌ Usuario no encontrado"}
+
+        rows = get_last_transactions(conn, user_id, limit)
+        if not rows:
+            return {"success": False, "message": "❌ No hay transacciones."}
+
+        n = len(rows)
+        if index > n:
+            return {"success": False, "message": "❌ Índice inválido. Usa last."}
+
+        row = rows[index - 1]
+        tx_id = row[0]
+        tx_type = (row[5] or "").upper().strip()
+
+        inc = resolve_income_category_for_input(category_input)
+        norm = normalize_category(category_input)
+
+        if tx_type == "INGRESO":
+            if inc is not None:
+                category = inc
+            elif norm is not None:
+                category = norm
+            else:
+                return {"success": False, "message": "❌ Categoría no reconocida."}
+        else:
+            if norm is None:
+                return {"success": False, "message": "❌ Categoría no reconocida."}
+            category = norm
+
+        update_transaction_category(conn, tx_id, category)
+        conn.commit()
+        return {"success": True, "message": f"✅ Categoría actualizada: {category}"}
+    finally:
+        conn.close()
 
 
 def set_budget(
