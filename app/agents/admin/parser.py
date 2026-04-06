@@ -11,6 +11,8 @@ from app.agents.admin.models import (
     INCOME_CATEGORIES,
     INCOME_CATEGORY_ALIASES,
     INCOME_HINTS,
+    LEGACY_SUBSCRIPCIONES_OTROS,
+    SUBSCRIPCIONES_OTROS,
 )
 
 
@@ -22,6 +24,9 @@ def normalize_category(input_text: str) -> Optional[str]:
     t = input_text.lower().strip()
     if not t:
         return None
+    # Entrada exacta con nombre antiguo (p. ej. copiado de histórico) → canónico nuevo.
+    if t == LEGACY_SUBSCRIPCIONES_OTROS.lower():
+        return SUBSCRIPCIONES_OTROS
     for cat in CATEGORIES:
         if cat.lower() == t:
             return cat

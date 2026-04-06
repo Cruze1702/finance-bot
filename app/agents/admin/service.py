@@ -11,6 +11,7 @@ from app.agents.admin.models import (
     SHARED_BUDGET_OWNER_DISPLAY_NAME,
     TZ,
     USERS,
+    category_db_variants,
 )
 from app.agents.admin.parser import (
     detect_category,
@@ -40,6 +41,8 @@ from app.agents.admin.repositories import (
     delete_transactions_for_month,
     delete_budget_alert_state_for_month,
     get_household_expense_by_category_for_month,
+    get_egreso_transactions_all_category_month,
+    get_egreso_transactions_user_category_month,
 )
 from app.agents.admin import stats
 
@@ -50,6 +53,69 @@ RECENT_TRANSACTIONS_LIMIT = 5
 def _household_budget_owner_id(conn) -> int | None:
     """user_id bajo el cual viven las filas de budgets compartidos (ver models)."""
     return get_user_id(conn, SHARED_BUDGET_OWNER_DISPLAY_NAME)
+
+
+def get_category_movements_report(
+    user_display_name: str,
+    category_input: str,
+    month: str | None = None,
+) -> dict:
+    """
+    Movimientos EGRESO del mes por categoría canónica: bloque usuario + bloque ALL (hogar).
+    """
+    category = normalize_category(category_input)
+    if category is None:
+        return {
+            "success": False,
+            "message": (
+                f"❌ Categoría no reconocida: '{category_input.strip() or '(vacío)'}'. "
+                "Ej: comida, transporte, suscripciones, subscripciones."
+            ),
+        }
+
+    month = month or datetime.now(TZ).strftime("%Y-%m")
+    start, end = stats.month_range(month)
+    variants = category_db_variants(category)
+
+    conn = get_conn()
+    try:
+        user_id = get_user_id(conn, user_display_name)
+        if user_id is None:
+            return {"success": False, "message": "❌ Usuario no encontrado"}
+
+        rows_me = get_egreso_transactions_user_category_month(
+            conn, user_id, variants, start, end
+        )
+        rows_all = get_egreso_transactions_all_category_month(conn, variants, start, end)
+    finally:
+        conn.close()
+
+    def _fmt_money(x: float) -> str:
+        return f"${x:,.2f}"
+
+    lines = [f"🧾 Categoría {category} | {month}", "", "TU RESUMEN", ""]
+    total_me = 0.0
+    if not rows_me:
+        lines.append("(sin movimientos de egreso en esta categoría este mes.)")
+    else:
+        for i, r in enumerate(rows_me, 1):
+            date_s, desc, amt = r[0], (r[1] or "").strip(), float(r[2] or 0)
+            total_me += amt
+            lines.append(f"{i}. {date_s} — {desc} — {_fmt_money(amt)}")
+        lines.append(f"Total: {_fmt_money(total_me)}")
+
+    lines.extend(["", "ALL", ""])
+    total_all = 0.0
+    if not rows_all:
+        lines.append("(sin movimientos de egreso en esta categoría este mes.)")
+    else:
+        for i, r in enumerate(rows_all, 1):
+            date_s, desc, amt, uname = r[0], (r[1] or "").strip(), float(r[2] or 0), r[3]
+            total_all += amt
+            lines.append(f"{i}. {date_s} — {desc} — {uname} — {_fmt_money(amt)}")
+        lines.append(f"Total: {_fmt_money(total_all)}")
+
+    return {"success": True, "message": "\n".join(lines)}
 
 
 def add_transaction(user_display_name: str, text: str) -> dict:

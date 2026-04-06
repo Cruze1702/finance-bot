@@ -41,6 +41,21 @@ USER_MAP = {
 
 DEFAULT_USER = "cross"
 
+# Canónico visible; LEGACY_* es el nombre previo en DB hasta migración manual SQL.
+SUBSCRIPCIONES_OTROS = "SUBSCRIPCIONES / OTROS"
+LEGACY_SUBSCRIPCIONES_OTROS = "SUSCRIPCIONES / OTROS"
+
+
+def category_db_variants(canonical_category: str) -> tuple[str, ...]:
+    """
+    Valores de category en SQLite a considerar para una categoría canónica.
+    Incluye el nombre legacy de subscripciones hasta unificar datos en producción.
+    """
+    if canonical_category == SUBSCRIPCIONES_OTROS:
+        return (SUBSCRIPCIONES_OTROS, LEGACY_SUBSCRIPCIONES_OTROS)
+    return (canonical_category,)
+
+
 CATEGORIES = [
     "INGRESOS",
     "HOGAR",
@@ -50,7 +65,7 @@ CATEGORIES = [
     "ROPA Y BELLEZA",
     "DIVERSIÓN Y SALIDAS",
     "EDUCACIÓN",
-    "SUSCRIPCIONES / OTROS",
+    SUBSCRIPCIONES_OTROS,
     "VARIOS / IMPREVISTOS",
     "AHORROS",
 ]
@@ -146,8 +161,11 @@ CATEGORY_ALIASES = {
     "diversion": "DIVERSIÓN Y SALIDAS",
     "curso": "EDUCACIÓN",
     "educacion": "EDUCACIÓN",
-    "suscripcion": "SUSCRIPCIONES / OTROS",
-    "netflix": "SUSCRIPCIONES / OTROS",
+    "subscripciones": SUBSCRIPCIONES_OTROS,
+    "subscripcion": SUBSCRIPCIONES_OTROS,
+    "suscripciones": SUBSCRIPCIONES_OTROS,
+    "suscripcion": SUBSCRIPCIONES_OTROS,
+    "netflix": SUBSCRIPCIONES_OTROS,
     "imprevisto": "VARIOS / IMPREVISTOS",
     "varios": "VARIOS / IMPREVISTOS",
     "ahorro": "AHORROS",

@@ -311,3 +311,60 @@ def get_household_expense_by_category_for_month(
         (start, end),
     )
     return {row[0] or "SIN CATEGORIA": float(row[1] or 0) for row in cur.fetchall()}
+
+
+def get_egreso_transactions_user_category_month(
+    conn: sqlite3.Connection,
+    user_id: int,
+    categories: tuple[str, ...],
+    start: str,
+    end: str,
+) -> list[tuple]:
+    """
+    EGRESO del usuario en [start, end) con category en `categories` (orden: más reciente primero).
+    Filas: (date, description, amount, id).
+    """
+    if not categories:
+        return []
+    ph = ",".join("?" * len(categories))
+    cur = conn.execute(
+        f"""
+        SELECT date, description, amount, id
+        FROM transactions
+        WHERE user_id = ?
+          AND date >= ? AND date < ?
+          AND UPPER(TRIM(COALESCE(type, ''))) = 'EGRESO'
+          AND TRIM(COALESCE(category, '')) IN ({ph})
+        ORDER BY date DESC, id DESC
+        """,
+        (user_id, start, end, *categories),
+    )
+    return cur.fetchall()
+
+
+def get_egreso_transactions_all_category_month(
+    conn: sqlite3.Connection,
+    categories: tuple[str, ...],
+    start: str,
+    end: str,
+) -> list[tuple]:
+    """
+    EGRESO de todos los usuarios en [start, end) con category en `categories`.
+    Filas: (date, description, amount, user_name, id). Más reciente primero.
+    """
+    if not categories:
+        return []
+    ph = ",".join("?" * len(categories))
+    cur = conn.execute(
+        f"""
+        SELECT t.date, t.description, t.amount, u.name, t.id
+        FROM transactions t
+        JOIN users u ON u.id = t.user_id
+        WHERE t.date >= ? AND t.date < ?
+          AND UPPER(TRIM(COALESCE(t.type, ''))) = 'EGRESO'
+          AND TRIM(COALESCE(t.category, '')) IN ({ph})
+        ORDER BY t.date DESC, t.id DESC
+        """,
+        (start, end, *categories),
+    )
+    return cur.fetchall()

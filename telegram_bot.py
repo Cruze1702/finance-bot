@@ -28,6 +28,7 @@ from app.agents.admin.service import (
     get_weekly_report,
     list_budgets_status,
     list_last_transactions,
+    get_category_movements_report,
     reset_month_data,
     set_budget,
 )
@@ -70,6 +71,7 @@ HELP_TEXT = (
     "• /summary — resumen rápido (tú + total)\n"
     "• /excel — exportar mes\n"
     "• /last — últimas transacciones\n"
+    "• /categoria <nombre> — egresos del mes (tú + ALL)\n"
     "• /budgets — presupuestos\n"
     "• /subscribe / /unsubscribe — reporte semanal\n"
     "• /reset_month — borrar datos del mes actual\n\n"
@@ -177,6 +179,20 @@ async def cmd_last(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = resolve_user(update)
     display_name = USERS.get(user, user)
     result = list_last_transactions(display_name)
+    await update.message.reply_text(result["message"])
+
+
+async def cmd_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    args = context.args or []
+    if not args:
+        await update.message.reply_text(
+            "❌ Uso: /categoria <categoría>. Ej: /categoria comida"
+        )
+        return
+    cat_input = " ".join(args)
+    user = resolve_user(update)
+    display_name = USERS.get(user, user)
+    result = get_category_movements_report(display_name, cat_input)
     await update.message.reply_text(result["message"])
 
 
@@ -386,6 +402,20 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(result["message"])
         return
 
+    m_categoria = re.match(r"(?i)^categor[ií]a(?:\s+(.+))?$", text.strip())
+    if m_categoria:
+        rest = (m_categoria.group(1) or "").strip()
+        if not rest:
+            await update.message.reply_text(
+                "❌ Uso: categoria <categoría>. Ej: categoria comida"
+            )
+            return
+        user = resolve_user(update)
+        display_name = USERS.get(user, user)
+        result = get_category_movements_report(display_name, rest)
+        await update.message.reply_text(result["message"])
+        return
+
     if not has_amount(text):
         await update.message.reply_text(
             "❌ No detecté un monto en tu mensaje.\n\n"
@@ -468,6 +498,7 @@ def main():
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("excel", cmd_excel))
     app.add_handler(CommandHandler("last", cmd_last))
+    app.add_handler(CommandHandler("categoria", cmd_categoria))
     app.add_handler(CommandHandler("budgets", cmd_budgets))
     app.add_handler(CommandHandler("summary", cmd_summary))
     app.add_handler(CommandHandler("reset_month", cmd_reset_month))
