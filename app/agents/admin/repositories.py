@@ -291,3 +291,23 @@ def get_expense_by_category_for_month(
         (user_id, start, end),
     )
     return {row[0] or "SIN CATEGORIA": float(row[1] or 0) for row in cur.fetchall()}
+
+
+def get_household_expense_by_category_for_month(
+    conn: sqlite3.Connection, start: str, end: str
+) -> dict:
+    """
+    Gasto por categoría en [start, end) sobre `date`, sumando todos los usuarios (EGRESO).
+    Para comparar contra budgets compartidos del hogar.
+    """
+    cur = conn.execute(
+        """
+        SELECT category, SUM(amount)
+        FROM transactions
+        WHERE date >= ? AND date < ?
+          AND UPPER(TRIM(COALESCE(type, ''))) = 'EGRESO'
+        GROUP BY category
+        """,
+        (start, end),
+    )
+    return {row[0] or "SIN CATEGORIA": float(row[1] or 0) for row in cur.fetchall()}

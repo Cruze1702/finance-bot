@@ -20,6 +20,17 @@ USERS = {
     "pau": "Pau",
 }
 
+# Budgets compartidos del hogar (sin cambiar schema budgets).
+# La tabla sigue siendo (user_id, category), pero el producto trata esas filas como UNA sola
+# bolsa por categoría para todo el hogar. Convención: leer/escribir siempre el user_id de
+# SHARED_BUDGET_OWNER_DISPLAY_NAME (histórico: en producción los budgets viven bajo "Pau").
+# El % usado y el gasto vs tope usan EGRESO agregado de todos los usuarios en transactions.
+#
+# Duplicados legacy: si existieran filas para la misma categoría bajo Cross y bajo Pau, esta
+# implementación solo ve las del owner canónico; las del otro usuario quedarían huérfanas
+# hasta consolidarlas a mano (DELETE/INSERT o copia SQL), sin migración automática destructiva.
+SHARED_BUDGET_OWNER_DISPLAY_NAME = USERS["pau"]
+
 # Bot timezone (PST/PDT)
 TZ = ZoneInfo("America/Los_Angeles")
 

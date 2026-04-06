@@ -5,7 +5,13 @@ Orchestrates parser, repositories, stats, and excel.
 from datetime import datetime
 
 from app.agents.admin import excel
-from app.agents.admin.models import BUDGET_BLOCKED_CATEGORIES, DEFAULT_CURRENCY, TZ, USERS
+from app.agents.admin.models import (
+    BUDGET_BLOCKED_CATEGORIES,
+    DEFAULT_CURRENCY,
+    SHARED_BUDGET_OWNER_DISPLAY_NAME,
+    TZ,
+    USERS,
+)
 from app.agents.admin.parser import (
     detect_category,
     detect_income_category,
@@ -33,12 +39,17 @@ from app.agents.admin.repositories import (
     upsert_budget_alert_level,
     delete_transactions_for_month,
     delete_budget_alert_state_for_month,
-    get_expense_by_category_for_month,
+    get_household_expense_by_category_for_month,
 )
 from app.agents.admin import stats
 
 # Misma ventana que `last` / delete <n> / edit <n> (índice 1 = más reciente).
 RECENT_TRANSACTIONS_LIMIT = 5
+
+
+def _household_budget_owner_id(conn) -> int | None:
+    """user_id bajo el cual viven las filas de budgets compartidos (ver models)."""
+    return get_user_id(conn, SHARED_BUDGET_OWNER_DISPLAY_NAME)
 
 
 def add_transaction(user_display_name: str, text: str) -> dict:
@@ -362,7 +373,7 @@ def set_budget(
     user_display_name: str, category_input: str, amount: float, currency: str = "CAD"
 ) -> dict:
     """
-    Crea o actualiza el presupuesto de una categoría.
+    Crea o actualiza un budget compartido del hogar (misma fila para Cross y Pau).
     category_input se normaliza con normalize_category. Error si no se reconoce.
     """
     if amount <= 0:
@@ -389,11 +400,16 @@ def set_budget(
 
     conn = get_conn()
     try:
-        user_id = get_user_id(conn, user_display_name)
-        if user_id is None:
+        caller_id = get_user_id(conn, user_display_name)
+        if caller_id is None:
             return {"success": False, "message": "❌ Usuario no encontrado"}
 
-        upsert_budget(conn, user_id, category, amount, currency)
+        ensure_user(SHARED_BUDGET_OWNER_DISPLAY_NAME)
+        owner_id = get_user_id(conn, SHARED_BUDGET_OWNER_DISPLAY_NAME)
+        if owner_id is None:
+            return {"success": False, "message": "❌ Usuario no encontrado"}
+
+        upsert_budget(conn, owner_id, category, amount, currency)
         conn.commit()
         return {"success": True, "message": f"✅ Presupuesto {category}: ${amount:,.2f} {currency}"}
     finally:
@@ -404,7 +420,7 @@ def get_budget_status(
     user_display_name: str, category_input: str, month: str | None = None
 ) -> dict:
     """
-    Estado del presupuesto de una categoría: presupuesto, gastado, disponible, porcentaje.
+    Estado de una categoría: tope en budgets compartidos; gasto del mes = suma hogar (todos los usuarios).
     """
     category = normalize_category(category_input)
     if category is None:
@@ -414,16 +430,18 @@ def get_budget_status(
         }
 
     month = month or datetime.now(TZ).strftime("%Y-%m")
+    # Gasto del mes: solo transacciones EGRESO en [start, end) sobre `date`.
     start, end = stats.month_range(month)
 
     conn = get_conn()
     try:
-        user_id = get_user_id(conn, user_display_name)
-        if user_id is None:
+        caller_id = get_user_id(conn, user_display_name)
+        if caller_id is None:
             return {"success": False, "message": "❌ Usuario no encontrado"}
 
-        row = get_budget(conn, user_id, category)
-        expenses = get_expense_by_category_for_month(conn, user_id, start, end)
+        owner_id = _household_budget_owner_id(conn)
+        row = get_budget(conn, owner_id, category) if owner_id is not None else None
+        expenses = get_household_expense_by_category_for_month(conn, start, end)
         spent = expenses.get(category, 0.0)
     finally:
         conn.close()
@@ -433,14 +451,15 @@ def get_budget_status(
 
     lines = [f"📋 {category} | {month}", ""]
     if budget_amt is None:
-        lines.append("Presupuesto: — (no definido)")
-        lines.append(f"Gastado:     ${spent:,.2f} {curr}")
+        lines.append("Tope: — (sin budget configurado)")
+        lines.append(f"Gastado (mes): ${spent:,.2f} {curr}")
     else:
-        available = budget_amt - spent
+        remaining = budget_amt - spent
         pct = (spent / budget_amt * 100.0) if budget_amt > 0 else 0.0
-        lines.append(f"Presupuesto: ${budget_amt:,.2f} {curr}")
-        lines.append(f"Gastado:     ${spent:,.2f} {curr} ({pct:.0f}%)")
-        lines.append(f"Disponible:  ${available:,.2f} {curr}")
+        lines.append(f"Tope: ${budget_amt:,.2f} {curr}")
+        lines.append(f"Gastado (mes): ${spent:,.2f} {curr}")
+        lines.append(f"Restante: ${remaining:,.2f} {curr}")
+        lines.append(f"Usado: {pct:.0f}%")
     return {"success": True, "message": "\n".join(lines)}
 
 
@@ -448,35 +467,44 @@ def list_budgets_status(
     user_display_name: str, month: str | None = None
 ) -> dict:
     """
-    Lista presupuestos con gastado, disponible y porcentaje.
-    Solo categorías con presupuesto definido. Si no hay, error claro.
+    Lista budgets compartidos del hogar (filas bajo owner canónico; ver models).
+    Gastado/restante/% = egresos del mes agregados de todos los usuarios (`date`).
     """
     month = month or datetime.now(TZ).strftime("%Y-%m")
     start, end = stats.month_range(month)
 
     conn = get_conn()
     try:
-        user_id = get_user_id(conn, user_display_name)
-        if user_id is None:
+        caller_id = get_user_id(conn, user_display_name)
+        if caller_id is None:
             return {"success": False, "message": "❌ Usuario no encontrado"}
 
-        rows = get_budgets(conn, user_id)
-        if not rows:
-            return {"success": False, "message": "❌ No tienes presupuestos definidos."}
+        owner_id = _household_budget_owner_id(conn)
+        if owner_id is None:
+            return {"success": False, "message": "No tienes budgets configurados."}
 
-        expenses = get_expense_by_category_for_month(conn, user_id, start, end)
+        rows = get_budgets(conn, owner_id)
+        if not rows:
+            return {"success": False, "message": "No tienes budgets configurados."}
+
+        expenses = get_household_expense_by_category_for_month(conn, start, end)
     finally:
         conn.close()
 
-    lines = [f"📋 Presupuestos ({user_display_name}) | {month}", ""]
+    lines = [f"📋 Budgets (hogar) | {month}", ""]
     for cat, budget_amt, curr in rows:
         budget_amt = float(budget_amt)
         spent = expenses.get(cat, 0.0)
-        available = budget_amt - spent
-        pct = (spent / budget_amt * 100.0) if budget_amt > 0 else 0
-        lines.append(
-            f"{cat}: ${budget_amt:,.2f} | ${spent:,.2f} gastado ({pct:.0f}%) | ${available:,.2f} disponible"
-        )
+        remaining = budget_amt - spent
+        pct = (spent / budget_amt * 100.0) if budget_amt > 0 else 0.0
+        lines.append(f"• {cat}")
+        lines.append(f"  Tope: ${budget_amt:,.2f} {curr}")
+        lines.append(f"  Gastado: ${spent:,.2f} {curr}")
+        lines.append(f"  Restante: ${remaining:,.2f} {curr}")
+        lines.append(f"  Usado: {pct:.0f}%")
+        lines.append("")
+    if lines and lines[-1] == "":
+        lines.pop()
     return {"success": True, "message": "\n".join(lines)}
 
 
@@ -484,23 +512,22 @@ def check_budget_alert(
     user_display_name: str, category: str, month: str | None = None
 ) -> dict | None:
     """
-    Revisa si la categoría tiene presupuesto y si el gasto acumulado alcanza
-    umbrales de alerta (80% o 100%).
-    Solo devuelve alerta si el nivel actual supera el último nivel ya alertado
-    (evita repeticiones en el mismo mes).
-    Devuelve None si no hay presupuesto, budget_amt <= 0, no alcanza 80%, o ya se alertó.
-    Devuelve {"message": "..."} con el texto de alerta en caso contrario.
+    Revisa budget compartido del hogar vs gasto agregado del mes; estado de alerta en user_id del owner canónico.
     """
     month = month or datetime.now(TZ).strftime("%Y-%m")
     start, end = stats.month_range(month)
 
     conn = get_conn()
     try:
-        user_id = get_user_id(conn, user_display_name)
-        if user_id is None:
+        caller_id = get_user_id(conn, user_display_name)
+        if caller_id is None:
             return None
 
-        row = get_budget(conn, user_id, category)
+        owner_id = _household_budget_owner_id(conn)
+        if owner_id is None:
+            return None
+
+        row = get_budget(conn, owner_id, category)
         if row is None:
             return None
 
@@ -510,7 +537,7 @@ def check_budget_alert(
         if budget_amt <= 0:
             return None
 
-        expenses = get_expense_by_category_for_month(conn, user_id, start, end)
+        expenses = get_household_expense_by_category_for_month(conn, start, end)
         spent = expenses.get(category, 0.0)
         pct = (spent / budget_amt * 100.0) if budget_amt > 0 else 0.0
 
@@ -521,7 +548,7 @@ def check_budget_alert(
         else:
             return None
 
-        stored_level = get_budget_alert_level(conn, user_id, category, month)
+        stored_level = get_budget_alert_level(conn, owner_id, category, month)
         if current_level <= stored_level:
             return None
 
@@ -540,7 +567,7 @@ def check_budget_alert(
                 f"Disponible: ${available:,.2f} {curr}"
             )
 
-        upsert_budget_alert_level(conn, user_id, category, month, current_level)
+        upsert_budget_alert_level(conn, owner_id, category, month, current_level)
         conn.commit()
         return {"message": alert_msg}
     finally:
@@ -563,6 +590,10 @@ def reset_month_data(user_display_name: str) -> dict:
 
         tx_deleted = delete_transactions_for_month(conn, user_id, start, end)
         alerts_deleted = delete_budget_alert_state_for_month(conn, user_id, month)
+        # Alertas de budgets compartidos viven bajo el owner canónico (p. ej. Pau).
+        owner_id = _household_budget_owner_id(conn)
+        if owner_id is not None and owner_id != user_id:
+            alerts_deleted += delete_budget_alert_state_for_month(conn, owner_id, month)
         conn.commit()
 
         msg = (
@@ -579,7 +610,7 @@ def reset_month_data(user_display_name: str) -> dict:
 def delete_budget_for_category(
     user_display_name: str, category_input: str
 ) -> dict:
-    """Elimina el presupuesto de una categoría."""
+    """Elimina el budget compartido de una categoría (fila del owner canónico)."""
     category = normalize_category(category_input)
     if category is None:
         return {
@@ -589,15 +620,19 @@ def delete_budget_for_category(
 
     conn = get_conn()
     try:
-        user_id = get_user_id(conn, user_display_name)
-        if user_id is None:
+        caller_id = get_user_id(conn, user_display_name)
+        if caller_id is None:
             return {"success": False, "message": "❌ Usuario no encontrado"}
 
-        row = get_budget(conn, user_id, category)
+        owner_id = _household_budget_owner_id(conn)
+        if owner_id is None:
+            return {"success": False, "message": f"❌ No tenías presupuesto para {category}."}
+
+        row = get_budget(conn, owner_id, category)
         if row is None:
             return {"success": False, "message": f"❌ No tenías presupuesto para {category}."}
 
-        delete_budget(conn, user_id, category)
+        delete_budget(conn, owner_id, category)
         conn.commit()
         return {"success": True, "message": f"✅ Presupuesto {category} eliminado."}
     finally:
