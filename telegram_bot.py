@@ -2,7 +2,7 @@ import re
 import sys
 import json
 import logging
-from datetime import datetime, time as dtime
+from datetime import date, datetime, time as dtime
 
 from app.agents.admin.models import (
     DEFAULT_USER,
@@ -69,9 +69,9 @@ HELP_TEXT = (
     "• /whoami — tu usuario detectado\n"
     "• /stats — estadísticas (tú + total)\n"
     "• /summary — resumen rápido (tú + total)\n"
-    "• /excel — exportar mes\n"
+    "• /excel [YYYY-MM] — exportar mes (opcional otro mes)\n"
     "• /last — últimas transacciones\n"
-    "• /categoria <nombre> — egresos del mes (tú + ALL)\n"
+    "• /categoria <nombre> [YYYY-MM] — egresos (tú + ALL), mes opcional al final\n"
     "• /budgets — presupuestos\n"
     "• /subscribe / /unsubscribe — reporte semanal\n"
     "• /reset_month — borrar datos del mes actual\n\n"
@@ -125,6 +125,66 @@ def normalize_month(m: str | None) -> str | None:
         return None
     m = m.strip()
     return m if re.fullmatch(r"\d{4}-\d{2}", m) else None
+
+
+def _month_calendar_valid(yyyy_mm: str) -> bool:
+    """True si YYYY-MM es fecha de calendario válida (p. ej. rechaza 2026-13)."""
+    if not normalize_month(yyyy_mm):
+        return False
+    y, mo = map(int, yyyy_mm.split("-"))
+    try:
+        date(y, mo, 1)
+        return True
+    except ValueError:
+        return False
+
+
+def _validate_yyyy_mm_token(tok: str) -> str | None:
+    """None si ok; si no, mensaje de error listo para el usuario."""
+    if not re.fullmatch(r"\d{4}-\d{2}", tok):
+        return f"❌ Mes inválido: '{tok}'. Usa formato YYYY-MM, ej. 2026-03."
+    if not _month_calendar_valid(tok):
+        return f"❌ Mes inválido: '{tok}'. El mes debe ser 01-12."
+    return None
+
+
+def split_trailing_optional_month(rest: str) -> tuple[str, str | None, str | None]:
+    """
+    Si el último token de `rest` es YYYY-MM válido en calendario, devuelve
+    (texto_categoría, mes, None). Si no hay mes al final, (rest, None, None).
+    Si el último token parece YYYY-MM pero el mes es inválido, (_, None, error).
+    """
+    rest = rest.strip()
+    if not rest:
+        return "", None, None
+    parts = rest.split()
+    last = parts[-1]
+    if re.fullmatch(r"\d{4}-\d{2}", last):
+        err = _validate_yyyy_mm_token(last)
+        if err:
+            return "", None, err
+        cat = " ".join(parts[:-1]).strip()
+        if not cat:
+            return "", None, "❌ Falta la categoría. Ej: categoria comida 2026-03"
+        return cat, last, None
+    return rest, None, None
+
+
+def _parse_excel_tail(tail: str) -> tuple[str | None, str | None]:
+    """
+    Cola tras la palabra 'excel'. Vacío → (None, None) = usar mes actual.
+    Un token YYYY-MM válido → (mes, None). Cualquier otro caso → (None, error).
+    """
+    t = tail.strip()
+    if not t:
+        return None, None
+    parts = t.split()
+    if len(parts) > 1:
+        return None, "❌ Uso: excel o excel YYYY-MM."
+    err = _validate_yyyy_mm_token(parts[0])
+    if err:
+        return None, err
+    return parts[0], None
 
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -186,13 +246,18 @@ async def cmd_categoria(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args or []
     if not args:
         await update.message.reply_text(
-            "❌ Uso: /categoria <categoría>. Ej: /categoria comida"
+            "❌ Uso: /categoria <categoría> [YYYY-MM]. Ej: /categoria comida o /categoria comida 2026-03"
         )
         return
-    cat_input = " ".join(args)
+    cat_input, opt_month, err = split_trailing_optional_month(" ".join(args))
+    if err:
+        await update.message.reply_text(err)
+        return
     user = resolve_user(update)
     display_name = USERS.get(user, user)
-    result = get_category_movements_report(display_name, cat_input)
+    result = get_category_movements_report(
+        display_name, cat_input, month=opt_month
+    )
     await update.message.reply_text(result["message"])
 
 
@@ -220,9 +285,32 @@ async def cmd_reset_month(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    parts = (update.message.text or "").strip().split()
-    m = normalize_month(parts[1]) if len(parts) >= 2 else current_month()
+    text = (update.message.text or "").strip()
+    parts = text.split()
+    if not parts:
+        m = current_month()
+    else:
+        head = parts[0].split("@", 1)[0].lower()
+        extra = parts[1:] if head == "/excel" else []
+        if not extra:
+            m = current_month()
+        elif len(extra) == 1:
+            tok = extra[0]
+            err = _validate_yyyy_mm_token(tok)
+            if err:
+                await update.message.reply_text(err)
+                return
+            m = tok
+        else:
+            await update.message.reply_text(
+                "❌ Uso: /excel [YYYY-MM]. Ej: /excel 2026-03"
+            )
+            return
 
+    await _send_excel_for_month(update, m)
+
+
+async def _send_excel_for_month(update: Update, m: str) -> None:
     try:
         path = export_excel_template(month=m)
     except Exception as e:
@@ -231,7 +319,9 @@ async def cmd_excel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if path is None or not path.exists():
-        await update.message.reply_text("❌ No pude generar Excel. Verifica que la plantilla exista en app/templates/.")
+        await update.message.reply_text(
+            "❌ No pude generar Excel. Verifica que la plantilla exista en app/templates/."
+        )
         return
 
     await update.message.reply_document(
@@ -385,8 +475,15 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if low == "summary":
         await cmd_summary(update, context)
         return
-    if low == "excel":
-        await cmd_excel(update, context)
+    m_excel = re.match(r"(?i)^excel(?:\s+(.*))?$", text.strip())
+    if m_excel:
+        tail = m_excel.group(1) or ""
+        opt_m, err = _parse_excel_tail(tail)
+        if err:
+            await update.message.reply_text(err)
+            return
+        m = opt_m if opt_m is not None else current_month()
+        await _send_excel_for_month(update, m)
         return
     if low == "subscribe":
         await cmd_subscribe(update, context)
@@ -407,12 +504,18 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rest = (m_categoria.group(1) or "").strip()
         if not rest:
             await update.message.reply_text(
-                "❌ Uso: categoria <categoría>. Ej: categoria comida"
+                "❌ Uso: categoria <categoría> [YYYY-MM]. Ej: categoria comida o categoria comida 2026-03"
             )
+            return
+        cat_input, opt_month, err = split_trailing_optional_month(rest)
+        if err:
+            await update.message.reply_text(err)
             return
         user = resolve_user(update)
         display_name = USERS.get(user, user)
-        result = get_category_movements_report(display_name, rest)
+        result = get_category_movements_report(
+            display_name, cat_input, month=opt_month
+        )
         await update.message.reply_text(result["message"])
         return
 
